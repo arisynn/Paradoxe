@@ -1,0 +1,1031 @@
+
+<!DOCTYPE html>
+<html lang="id">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>Pastel Paradox - The Queen's Move</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://cdn.jsdelivr.net/npm/canvas-confetti@1.6.0/dist/confetti.browser.min.js"></script>
+    <link href="https://fonts.googleapis.com/css2?family=Nunito:wght@500;700;800;900&display=swap" rel="stylesheet">
+    <style>
+        :root {
+            --c1: #ff758f; --c1-light: #ff9eb1;
+            --c2: #73a4f5; --c2-light: #9dbff9;
+            --c3: #96e6a1; --c3-light: #bbf0c3;
+            --c4: #ffd166; --c4-light: #ffe099;
+            --bg: #f0f4f8; --wall: #cbd5e1;
+            --grid-gap: 6px;
+        }
+
+        body {
+            font-family: 'Nunito', sans-serif; background-color: var(--bg);
+            background-image: radial-gradient(circle at 50% 0%, #ffffff 0%, var(--bg) 80%);
+            touch-action: none; overscroll-behavior: none; margin: 0; padding: 0; overflow: hidden; color: #475569;
+        }
+
+        .screen {
+            position: absolute; inset: 0; display: flex; flex-direction: column; align-items: center; justify-content: center;
+            transition: opacity 0.4s ease, transform 0.4s cubic-bezier(0.34, 1.56, 0.64, 1); z-index: 10;
+        }
+        .hidden-screen { opacity: 0; pointer-events: none; transform: scale(0.95); transition: opacity 0.3s, transform 0.3s; }
+
+        .board-container {
+            width: 100%; max-width: 340px; aspect-ratio: 1/1; position: relative; border-radius: 24px;
+            background: white; box-shadow: 0 25px 50px rgba(0,0,0,0.06), inset 0 4px 10px rgba(0,0,0,0.02); padding: 12px; box-sizing: border-box;
+        }
+        
+        .play-area { width: 100%; height: 100%; position: relative; }
+        .grid-bg { display: grid; grid-template-columns: repeat(5, 1fr); grid-template-rows: repeat(5, 1fr); gap: var(--grid-gap); width: 100%; height: 100%; position: absolute; inset: 0; }
+        .cell { background: #f8fafc; border-radius: 12px; }
+        .cell-wall { background: var(--wall); box-shadow: inset 0 -4px 0 rgba(0,0,0,0.15), 0 2px 4px rgba(0,0,0,0.05); }
+
+        .entity-wrapper, .target-wrapper { position: absolute; top: 0; left: 0; display: flex; align-items: center; justify-content: center; }
+        .entity-wrapper { z-index: 20; }
+        .target-wrapper { z-index: 5; }
+
+        .inner { 
+            width: 85%; height: 85%; border-radius: 12px; display: flex; align-items: center; justify-content: center;
+            box-shadow: 0 8px 15px rgba(0,0,0,0.15), inset 0 -4px 0 rgba(0,0,0,0.1); color: white; transition: all 0.3s cubic-bezier(0.34, 1.56, 0.64, 1);
+        }
+        
+        .arrow-icon { width: 60%; height: 60%; transition: transform 0.25s cubic-bezier(0.34, 1.56, 0.64, 1); }
+
+        .inner.c0 { background: linear-gradient(135deg, var(--c1-light), var(--c1)); }
+        .inner.c1 { background: linear-gradient(135deg, var(--c2-light), var(--c2)); }
+        .inner.c2 { background: linear-gradient(135deg, var(--c3-light), var(--c3)); }
+        .inner.c3 { background: linear-gradient(135deg, var(--c4-light), var(--c4)); }
+
+        .t-inner { width: 75%; height: 75%; border-radius: 50%; border: 3px dashed; animation: pulse-ring 2s infinite cubic-bezier(0.4, 0, 0.6, 1); }
+        .t-inner.tc0 { border-color: var(--c1); background: rgba(255, 117, 143, 0.15); }
+        .t-inner.tc1 { border-color: var(--c2); background: rgba(115, 164, 245, 0.15); }
+        .t-inner.tc2 { border-color: var(--c3); background: rgba(150, 230, 161, 0.15); }
+        .t-inner.tc3 { border-color: var(--c4); background: rgba(255, 209, 102, 0.15); }
+
+        @keyframes pulse-ring { 0%, 100% { transform: scale(0.8); opacity: 0.5; } 50% { transform: scale(1.1); opacity: 1; } }
+
+        .btn-glass { background: rgba(255, 255, 255, 0.7); backdrop-filter: blur(10px); border: 1px solid rgba(255,255,255,0.5); box-shadow: 0 4px 6px rgba(0,0,0,0.05); transition: all 0.2s; }
+        .btn-glass:active { transform: scale(0.95); }
+
+        .modal-overlay {
+            position: fixed; inset: 0; background-color: rgba(240, 244, 248, 0.85); backdrop-filter: blur(12px); display: flex; align-items: center; justify-content: center; z-index: 100; opacity: 0; pointer-events: none; transition: opacity 0.3s;
+        }
+        .modal-overlay.active { opacity: 1; pointer-events: auto; }
+        .modal-content { 
+            background: white; padding: 2.5rem 2rem; border-radius: 2rem; text-align: center; width: 85%; max-width: 320px; box-shadow: 0 25px 50px -12px rgba(0,0,0,0.25); transform: translateY(20px); transition: transform 0.3s cubic-bezier(0.34, 1.56, 0.64, 1); max-height: 90vh; overflow-y: auto;
+        }
+        .modal-overlay.active .modal-content { transform: translateY(0); }
+
+        .ai-loader { display: inline-block; width: 40px; height: 40px; border: 4px solid var(--c2-light); border-radius: 50%; border-top-color: var(--c2); animation: spin 1s ease-in-out infinite; }
+        @keyframes spin { to { transform: rotate(360deg); } }
+        
+        .hint-arrow {
+            position: absolute; top: 50%; left: 50%; transform-origin: center; width: 80px; height: 80px; color: rgba(255,255,255,0.9); filter: drop-shadow(0 10px 15px rgba(0,0,0,0.2)); z-index: 50; pointer-events: none; opacity: 0; transition: opacity 0.3s;
+        }
+
+        .tutorial-btn {
+            position: fixed; top: 1.5rem; right: 1.5rem; width: 3rem; height: 3rem; border-radius: 50%; background: rgba(255, 255, 255, 0.6); backdrop-filter: blur(8px); border: 2px solid white; box-shadow: 0 10px 20px rgba(0,0,0,0.05); display: flex; align-items: center; justify-content: center; font-size: 1.25rem; font-weight: 900; color: #73a4f5; transition: all 0.3s; z-index: 50; cursor: pointer;
+        }
+        .tutorial-btn:hover { background: white; transform: scale(1.05); box-shadow: 0 15px 25px rgba(115, 164, 245, 0.2); }
+        .tutorial-btn:active { transform: scale(0.95); }
+        
+        .tut-dialog { cursor: pointer; transition: transform 0.1s, box-shadow 0.2s; }
+        .tut-dialog:active { transform: scale(0.97); }
+
+        .level-btn { aspect-ratio: 1; border-radius: 1rem; font-weight: 900; font-size: 1.25rem; display: flex; align-items: center; justify-content: center; transition: all 0.2s; }
+        .level-btn.unlocked { background: white; border: 2px solid #73a4f5; color: #73a4f5; box-shadow: 0 4px 6px rgba(115, 164, 245, 0.2); cursor: pointer; }
+        .level-btn.unlocked:active { transform: scale(0.95); }
+        .level-btn.locked { background: #f1f5f9; color: #cbd5e1; cursor: not-allowed; border: 2px dashed #cbd5e1; }
+
+        /* Toast UI (Sleek) */
+        #toast-container { position: fixed; top: 20px; left: 50%; transform: translateX(-50%); z-index: 1000; display: flex; flex-direction: column; gap: 10px; pointer-events: none; width: 90%; align-items: center; }
+        .toast { background: rgba(30, 41, 59, 0.95); backdrop-filter: blur(8px); color: white; padding: 12px 24px; border-radius: 99px; font-weight: 800; font-size: 12px; box-shadow: 0 10px 25px rgba(0,0,0,0.15); opacity: 0; transform: translateY(-20px); transition: all 0.3s; text-align: center; max-width: 100%; border: 1px solid rgba(255,255,255,0.1); letter-spacing: 0.5px; }
+        .toast.show { opacity: 1; transform: translateY(0); }
+        
+        /* Leaderboard Scrollbar */
+        .lb-scroll::-webkit-scrollbar { width: 4px; }
+        .lb-scroll::-webkit-scrollbar-thumb { background: #cbd5e1; border-radius: 4px; }
+
+        /* Icon Utility */
+        .svg-icon { display: inline-block; width: 16px; height: 16px; margin-right: 4px; vertical-align: text-bottom; }
+    </style>
+</head>
+<body>
+
+    <!-- Toast Notifications -->
+    <div id="toast-container"></div>
+
+    <button id="tutorial-btn" onclick="startTutorial()" class="tutorial-btn">?</button>
+
+    <!-- Main Menu Screen -->
+    <div id="main-menu" class="screen">
+        <div class="text-center mb-6">
+            <h1 class="text-5xl font-black tracking-tighter mb-2">
+                <span class="text-[#ff758f]">PASTEL</span><br>
+                <span class="text-[#73a4f5]">PARADOX</span>
+            </h1>
+            <p class="text-gray-400 font-bold tracking-widest text-[11px]">OMNI-DIRECTIONAL PUZZLE</p>
+        </div>
+        
+        <div class="flex flex-col gap-3 w-full max-w-[240px] z-20">
+            <button onclick="continueGame()" class="w-full bg-[#73a4f5] text-white font-black text-xl py-4 rounded-full shadow-xl shadow-blue-200 hover:scale-105 active:scale-95 transition-all">
+                MAIN SEKARANG
+            </button>
+            <button onclick="openLevelSelect()" class="w-full bg-white text-[#73a4f5] border-2 border-[#73a4f5] font-black text-lg py-3 rounded-full hover:scale-105 active:scale-95 transition-all">
+                PILIH LEVEL
+            </button>
+        </div>
+        
+        <div class="mt-4 text-center">
+            <p class="text-xs text-gray-400 font-bold">Pemain: <span id="player-name-display" class="text-gray-700">Kamu</span></p>
+            <div class="flex justify-center gap-3 mt-1 text-[10px] font-black text-gray-400">
+                <span>LVL <span id="highest-lvl-display" class="text-[#73a4f5]">1</span></span>
+                <span>⭐ <span id="total-stars-display" class="text-[#ffd166]">0</span></span>
+                <span>👟 <span id="total-steps-display" class="text-gray-500">0</span></span>
+            </div>
+        </div>
+
+        <!-- Leaderboard Global -->
+        <div class="mt-6 w-full max-w-[300px] bg-white/70 backdrop-blur-md rounded-2xl p-4 shadow-sm border border-white z-20">
+            <div class="flex justify-between items-center mb-3">
+                <h3 class="text-[10px] font-black text-[#ff758f] uppercase tracking-widest flex items-center gap-1">
+                    <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3.055 11H5a2 2 0 012 2v1a2 2 0 002 2 2 2 0 012 2v2.945M8 3.935V5.5A2.5 2.5 0 0010.5 8h.5a2 2 0 012 2 2 2 0 104 0 2 2 0 012-2h1.064M15 20.488V18a2 2 0 012-2h3.064M21 12a9 9 0 11-18 0 9 9 0 0118 0z"></path></svg>
+                    Top 10 Global
+                </h3>
+                <button onclick="window.fetchLeaderboard()" class="text-[#73a4f5] hover:rotate-180 transition-transform p-1">
+                    <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"></path></svg>
+                </button>
+            </div>
+            <div id="leaderboard-list" class="flex flex-col gap-2 max-h-[160px] overflow-y-auto lb-scroll pr-1">
+                <div class="text-center text-xs text-gray-400 font-bold py-4 animate-pulse">Menghubungkan ke satelit...</div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Paradox Forge (Level 10+) -->
+    <div id="forge-screen" class="screen hidden-screen justify-start pt-10 px-6 bg-white/50 backdrop-blur-md">
+        <div class="w-full max-w-[340px]">
+            <div class="flex justify-between items-center mb-8">
+                <button onclick="switchScreen('menu'); SFX.click();" class="btn-glass p-3 rounded-2xl">
+                    <svg class="w-5 h-5 text-gray-500" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="3" d="M10 19l-7-7m0 0l7-7m-7 7h18"></path></svg>
+                </button>
+                <div class="text-right">
+                    <h2 class="text-2xl font-black text-gray-800 leading-none">LABORATORIUM</h2>
+                    <p class="text-[10px] font-bold text-[#ff758f] tracking-widest uppercase">8-Arah Kustom</p>
+                </div>
+            </div>
+
+            <div class="bg-white rounded-3xl p-5 shadow-xl border border-gray-100 mb-6">
+                <div class="flex justify-between items-center mb-4">
+                    <span class="font-bold text-sm text-gray-500 uppercase">Jumlah Blok</span>
+                    <div class="flex bg-gray-100 rounded-xl p-1">
+                        <button onclick="updateBlockCount(2)" id="btn-bc-2" class="px-4 py-1 rounded-lg text-sm font-black text-gray-400">2</button>
+                        <button onclick="updateBlockCount(3)" id="btn-bc-3" class="px-4 py-1 rounded-lg text-sm font-black bg-white shadow text-[#73a4f5]">3</button>
+                        <button onclick="updateBlockCount(4)" id="btn-bc-4" class="px-4 py-1 rounded-lg text-sm font-black text-gray-400">4</button>
+                    </div>
+                </div>
+                <div id="forge-entities" class="flex flex-col gap-3"></div>
+            </div>
+            <button onclick="startGame(true)" class="w-full bg-gradient-to-r from-[#ff758f] to-[#73a4f5] text-white font-black text-lg py-4 rounded-2xl shadow-lg hover:scale-[1.02] active:scale-95 transition-all">
+                RAKIT PARADOX
+            </button>
+        </div>
+    </div>
+
+    <!-- Loading Screen -->
+    <div id="loading" class="screen hidden-screen bg-white/95 backdrop-blur-md z-[200]">
+        <div class="ai-loader mb-4"></div>
+        <h2 class="text-xl font-black text-gray-700">Menyusun Jalur Akurat...</h2>
+        <p class="text-sm text-gray-400 mt-2 text-center px-8">Memproses kemungkinan efisiensi tertinggi...</p>
+    </div>
+
+    <!-- Game Screen -->
+    <div id="game-screen" class="screen hidden-screen justify-start pt-10 px-4">
+        <div class="w-full max-w-[340px] flex justify-between items-center mb-6">
+            <button onclick="returnToMenu()" class="btn-glass p-3 rounded-2xl">
+                <svg class="w-5 h-5 text-gray-500" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="3" d="M10 19l-7-7m0 0l7-7m-7 7h18"></path></svg>
+            </button>
+            <div class="text-center">
+                <div class="text-[10px] font-black text-gray-400 uppercase tracking-widest" id="mode-display">Tingkat Kesulitan</div>
+                <div class="text-2xl font-black text-gray-700" id="lvl-display-container">LEVEL <span id="lvl-display" class="text-[#ff758f]">1</span></div>
+            </div>
+            <div class="flex gap-2">
+                <div class="bg-white px-3 py-2 rounded-2xl shadow-sm border border-gray-100 text-center min-w-[55px]">
+                    <div class="text-[9px] font-bold text-gray-400 uppercase">Akurat</div>
+                    <div id="par-display" class="text-lg font-black text-[#96e6a1] leading-none">0</div>
+                </div>
+                <div class="bg-white px-3 py-2 rounded-2xl shadow-sm border border-gray-100 text-center min-w-[55px]">
+                    <div class="text-[9px] font-bold text-gray-400 uppercase">Langkah</div>
+                    <div id="step-display" class="text-lg font-black text-[#73a4f5] leading-none transition-colors">0/0</div>
+                </div>
+            </div>
+        </div>
+
+        <div class="board-container">
+            <div id="game-play-area" class="play-area">
+                <div id="game-grid-bg" class="grid-bg"></div>
+                <div id="hint-overlay" class="absolute inset-[-12px] bg-black/20 rounded-[24px] hidden z-40 pointer-events-none">
+                    <svg id="hint-arrow" class="hint-arrow" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="3" d="M5 12h14M12 5l7 7-7 7"/></svg>
+                </div>
+            </div>
+        </div>
+
+        <div id="legend-container" class="w-full max-w-[340px] mt-6 grid gap-2 text-center text-[10px] font-bold text-gray-500"></div>
+
+        <div class="w-full max-w-[340px] flex justify-between mt-4 gap-2">
+            <button onclick="undo()" class="flex-1 btn-glass py-3 rounded-2xl font-black text-gray-500 text-sm">
+                <svg class="svg-icon" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 10h10a8 8 0 018 8v2M3 10l6 6m-6-6l6-6"></path></svg>
+                UNDO
+            </button>
+            <button id="btn-hint" onclick="showHint()" class="flex-1 btn-glass py-3 rounded-2xl font-black text-[#ff758f] text-sm transition-all">
+                HINT
+            </button>
+            <button onclick="restartLevel()" class="flex-1 btn-glass py-3 rounded-2xl font-black text-gray-500 text-sm">
+                <svg class="svg-icon" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"></path></svg>
+                RESET
+            </button>
+        </div>
+    </div>
+
+    <!-- Tutorial Screen -->
+    <div id="tutorial-screen" class="screen hidden-screen justify-start pt-8 px-4 z-[300]">
+        <div class="w-full max-w-[340px] flex justify-between items-end mb-4">
+            <h2 class="text-3xl font-black text-gray-800 leading-none tracking-tighter">TUTORIAL</h2>
+            <div class="text-xs font-bold text-gray-400 uppercase">Langkah <span id="tut-step-display" class="text-[#73a4f5] text-lg font-black">1/16</span></div>
+        </div>
+        <div class="board-container mb-4">
+            <div id="tut-play-area" class="play-area">
+                <div id="tut-grid-bg" class="grid-bg"></div>
+            </div>
+        </div>
+        <div onclick="executeTutorialMove()" class="tut-dialog w-full max-w-[340px] bg-gradient-to-r from-[#ffd166] to-[#ffe099] rounded-2xl shadow-lg p-5 mb-4 relative overflow-hidden">
+            <div class="absolute top-0 right-0 w-16 h-16 bg-white opacity-20 rounded-bl-full"></div>
+            <p id="tut-desc" class="text-[13px] font-bold text-[#b8860b] leading-relaxed mb-3">Siap belajar? Tap di sini buat lanjut...</p>
+            <div class="w-full flex justify-end">
+                <span id="tut-next-text" class="text-[10px] font-black uppercase tracking-widest text-[#d49a0d] bg-white/40 px-3 py-1 rounded-full animate-pulse">TAP BUAT LANJUT >></span>
+            </div>
+        </div>
+        <button onclick="stopTutorial()" class="w-full max-w-[340px] bg-white border-2 border-gray-200 text-gray-400 py-3 rounded-2xl font-black text-sm active:scale-95 transition-all mt-auto mb-4">LEWATI TUTORIAL</button>
+    </div>
+
+    <!-- Modal Level Select -->
+    <div id="level-select-modal" class="modal-overlay">
+        <div class="modal-content !w-full !max-w-[360px] !p-6">
+            <div class="flex justify-between items-center mb-6">
+                <h2 class="text-2xl font-black text-gray-800">Pilih Level</h2>
+                <button onclick="closeLevelSelect()" class="text-gray-400 hover:text-gray-600">
+                    <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path></svg>
+                </button>
+            </div>
+            <div id="level-grid" class="grid grid-cols-4 gap-3 mb-6"></div>
+            <div id="forge-unlock-alert" class="hidden bg-blue-50 border border-blue-100 rounded-xl p-4 mb-2">
+                <p class="text-xs font-bold text-blue-500">Laboratorium (Mode Kustom) terbuka setelah Level 10!</p>
+            </div>
+            <button id="forge-access-btn" onclick="openForge()" class="hidden w-full bg-gradient-to-r from-[#ff758f] to-[#73a4f5] text-white font-black py-3 rounded-xl shadow hover:scale-105 active:scale-95 transition-all">BUKA LABORATORIUM</button>
+        </div>
+    </div>
+
+    <!-- Modal Input Name (Akun) -->
+    <div id="name-modal" class="modal-overlay z-[400]">
+        <div class="modal-content">
+            <h2 class="text-2xl font-black text-[#73a4f5] mb-2">Siapa Namamu?</h2>
+            <p class="text-xs text-gray-500 mb-6 font-semibold px-2">Masukkan nama dan buat PIN agar akunmu tidak dipakai orang lain 😎</p>
+            <div class="flex gap-2 mb-2">
+                <input type="text" id="player-name-input" placeholder="Nama / Username" class="w-2/3 p-4 border-2 border-gray-200 rounded-2xl font-bold text-center focus:border-[#73a4f5] focus:outline-none transition-colors" maxlength="15">
+                <input type="password" id="player-pin-input" placeholder="PIN" class="w-1/3 p-4 border-2 border-gray-200 rounded-2xl font-bold text-center focus:border-[#73a4f5] focus:outline-none transition-colors" maxlength="4" pattern="\d{4}">
+            </div>
+            <p class="text-[10px] text-gray-400 font-bold mb-4 text-left px-2">*Ingat PIN 4 angkamu untuk login di HP lain.</p>
+            <button onclick="submitName()" class="w-full py-4 rounded-2xl font-black text-white shadow-xl bg-gradient-to-r from-[#73a4f5] to-[#9dbff9] active:scale-95 transition-transform">SIMPAN & MULAI</button>
+        </div>
+    </div>
+
+    <!-- Modal General -->
+    <div id="modal" class="modal-overlay">
+        <div class="modal-content relative">
+            <div id="perfect-badge" class="hidden absolute -top-4 left-1/2 -translate-x-1/2 bg-[#ffd166] text-yellow-900 text-[10px] font-black uppercase tracking-widest px-4 py-1 rounded-full shadow-lg">AKURAT!</div>
+            <div id="stars-container" class="flex justify-center gap-1 mb-4 opacity-0 transition-opacity"></div>
+            <h2 id="modal-title" class="text-3xl font-black mb-2"></h2>
+            <p id="modal-desc" class="text-sm text-gray-500 mb-6 font-semibold"></p>
+            
+            <div class="flex gap-2 mb-3">
+                <button id="modal-btn-share" onclick="shareScore()" class="w-[60px] py-4 rounded-2xl font-black text-white shadow-xl bg-[#96e6a1] active:scale-95 transition-transform flex items-center justify-center">
+                    <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8.684 13.342C8.886 12.938 9 12.482 9 12c0-.482-.114-.938-.316-1.342m0 2.684a3 3 0 110-2.684m0 2.684l6.632 3.316m-6.632-6l6.632-3.316m0 0a3 3 0 105.367-2.684 3 3 0 00-5.367 2.684zm0 9.316a3 3 0 105.368 2.684 3 3 0 00-5.368-2.684z"></path></svg>
+                </button>
+                <button id="modal-btn" class="flex-1 py-4 rounded-2xl font-black text-white shadow-xl transition-transform active:scale-95"></button>
+            </div>
+            
+            <button id="modal-btn-menu" onclick="returnToMenu()" class="w-full py-3 rounded-2xl font-black text-gray-400 bg-gray-50 hover:bg-gray-100 transition-colors">KEMBALI KE MENU</button>
+        </div>
+    </div>
+
+    <!-- MAIN GAME LOGIC -->
+    <script>
+        // =========================================================================
+        // ☁️ API BACKEND LOGIC (MENGGANTIKAN FIREBASE)
+        // =========================================================================
+        
+        window.fetchLeaderboard = async () => {
+            const lbList = document.getElementById('leaderboard-list');
+            try {
+                const res = await fetch('/api/leaderboard');
+                if(res.ok) {
+                    const players = await res.json();
+                    renderLeaderboardUI(players);
+                } else {
+                    throw new Error("Bad response");
+                }
+            } catch(e) {
+                console.warn("Gagal memuat leaderboard (mungkin API belum di-deploy). Menampilkan demo data.");
+                renderLeaderboardUI([
+                    { name: "DemoPlayer1", level: 15, totalStars: 45, totalSteps: 120, totalHints: 0 },
+                    { name: "ProGamer", level: 12, totalStars: 36, totalSteps: 98, totalHints: 2 }
+                ]);
+            }
+        };
+
+        window.syncScoreToCloud = async () => {
+            if(!window.playerId || !window.playerPin) return;
+            try {
+                await fetch('/api/submit-score', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        playerId: window.playerId,
+                        name: window.playerName,
+                        pin: window.playerPin,
+                        level: window.highestLvl,
+                        steps: window.totalSteps,
+                        stars: window.totalStars,
+                        hintsUsed: window.totalHints
+                    })
+                });
+            } catch(e) { console.warn("Gagal sync ke server cloud:", e); }
+        };
+
+        function renderLeaderboardUI(players) {
+            const lbList = document.getElementById('leaderboard-list');
+            if(!players || players.length === 0) { lbList.innerHTML = `<div class="text-center text-xs text-gray-400 font-bold py-2">Belum ada pemain!</div>`; return; }
+            
+            let avgHints = players.reduce((acc, p) => acc + (p.totalHints || 0), 0) / (players.length || 1);
+
+            lbList.innerHTML = players.map((p, i) => {
+                let isShame = p.totalHints > 5 && p.totalHints > avgHints * 1.5;
+                let shameTag = isShame ? `<span class="ml-1 text-[8px] bg-red-100 text-red-600 px-1 py-0.5 rounded border border-red-200">🤡 Modal Hint</span>` : '';
+                let boxClass = isShame ? 'border-red-300 bg-red-50/50' : 'border-white/40 bg-white/50';
+                
+                return `
+                <div class="flex flex-col gap-1 ${boxClass} p-2 rounded-xl border">
+                    <div class="flex justify-between items-center">
+                        <div class="flex items-center gap-2">
+                            <span class="font-black ${i===0 ? 'text-[#ffd166]' : i===1 ? 'text-gray-400' : i===2 ? 'text-[#ff9eb1]' : 'text-gray-300'} text-sm w-4 text-center">${i+1}</span>
+                            <span class="font-bold text-xs text-gray-700 truncate max-w-[120px]">${p.name} ${shameTag}</span>
+                        </div>
+                        <span class="font-black text-[10px] bg-white px-2 py-1 rounded-md text-[#73a4f5] shadow-sm">Lvl ${p.level}</span>
+                    </div>
+                    <div class="flex justify-between text-[10px] text-gray-400 font-bold px-7">
+                        <span>⭐ ${p.totalStars || 0}</span>
+                        <span>👟 ${p.totalSteps || 0}</span>
+                    </div>
+                </div>
+                `;
+            }).join('');
+        }
+
+        // =========================================================================
+        // 🎮 GAME CONFIGURATION & STATE
+        // =========================================================================
+        const SIZE = 5;
+        const COLORS = ['#ff758f', '#73a4f5', '#96e6a1', '#ffd166'];
+        const ARROW_SVG = '<svg class="arrow-icon" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="4" d="M5 12h14M12 5l7 7-7 7"/></svg>';
+        
+        // --- HINT SYSTEM CONFIG ---
+        const HINT_UNLOCK_FAILS = 5;
+        let failCount = 0; 
+        
+        // --- ACCOUNT SYSTEM SETUP ---
+        let localAccountData = localStorage.getItem('pastel_account_v3');
+        if (localAccountData) {
+            let data = JSON.parse(localAccountData);
+            window.playerName = data.name; 
+            window.playerId = data.id;
+            window.playerPin = data.pin;
+            window.highestLvl = data.level || 1; 
+            window.completedLevels = data.completedLevels || {};
+            window.totalHints = data.totalHints || 0;
+            
+            window.totalStars = Object.values(window.completedLevels).reduce((sum, lvl) => sum + (lvl.stars || 0), 0);
+            window.totalSteps = Object.values(window.completedLevels).reduce((sum, lvl) => sum + (lvl.steps || 0), 0);
+        } else {
+            window.highestLvl = 1; window.totalStars = 0; window.totalSteps = 0; window.totalHints = 0;
+            window.completedLevels = {};
+        }
+        let lvl = window.highestLvl;
+
+        function updateMenuStats() {
+            document.getElementById('highest-lvl-display').innerText = window.highestLvl;
+            document.getElementById('player-name-display').innerText = window.playerName || 'Kamu';
+            document.getElementById('total-stars-display').innerText = window.totalStars;
+            document.getElementById('total-steps-display').innerText = window.totalSteps;
+        }
+        updateMenuStats();
+
+        const RULES = {
+            normal: { name: "Normal (Lurus)", calc: (dx, dy) => ({x: dx, y: dy}) },
+            reverse: { name: "Reverse (Mundur)", calc: (dx, dy) => ({x: -dx, y: -dy}) },
+            rotateRight: { name: "Belok Kanan 90°", calc: (dx, dy) => ({x: -dy, y: dx}) },
+            rotateLeft: { name: "Belok Kiri 90°", calc: (dx, dy) => ({x: dy, y: -dx}) }
+        };
+
+        let defaultEntities = [ { rule: 'normal' }, { rule: 'reverse' }, { rule: 'rotateRight' } ];
+        let activeEntityConfig = [...defaultEntities];
+        let state = { entities: [] }; 
+        let config = { walls: [], targets: [], path: [], parScore: 0 };
+        let currentSteps = 0; let history = []; let isMoving = false; let solutionPath = [];
+        let starsUsed = { undo: false, hint: false }; let isCustomMode = false;
+        let isTutorialMode = false; let tutStep = 0; let tutEntities = []; let currentStarsGained = 0;
+
+        // =========================================================================
+        // 🎵 AUDIO, HAPTICS & TOAST
+        // =========================================================================
+        const SFX = {
+            ctx: null,
+            init: function() { if(!this.ctx) this.ctx = new (window.AudioContext || window.webkitAudioContext)(); if(this.ctx.state === 'suspended') this.ctx.resume(); },
+            vibrate: function(p) { if (navigator.vibrate) navigator.vibrate(p); },
+            playTone: function(f, t, d, v=0.1) {
+                if(!this.ctx) return;
+                let osc = this.ctx.createOscillator(); let gain = this.ctx.createGain();
+                osc.type = t; osc.frequency.setValueAtTime(f, this.ctx.currentTime);
+                gain.gain.setValueAtTime(v, this.ctx.currentTime); gain.gain.exponentialRampToValueAtTime(0.01, this.ctx.currentTime + d);
+                osc.connect(gain); gain.connect(this.ctx.destination); osc.start(); osc.stop(this.ctx.currentTime + d);
+            },
+            click: function() { this.init(); this.playTone(600, 'triangle', 0.05, 0.05); this.vibrate(10); },
+            swipe: function() { this.init(); this.playTone(300, 'sine', 0.1, 0.03); this.vibrate(15); },
+            error: function() { this.init(); this.playTone(150, 'sawtooth', 0.2, 0.05); this.vibrate([30, 50, 30]); },
+            win: function() { this.init(); [440, 554, 659, 880].forEach((f,i) => setTimeout(() => this.playTone(f,'square',0.2, 0.05), i*100)); this.vibrate([50, 50, 50, 50, 100]); }
+        };
+        document.body.addEventListener('touchstart', () => SFX.init(), {once:true});
+        document.body.addEventListener('mousedown', () => SFX.init(), {once:true});
+
+        window.showToast = function(msg) {
+            const c = document.getElementById('toast-container');
+            const t = document.createElement('div'); t.className = 'toast show'; t.innerText = msg;
+            c.appendChild(t);
+            setTimeout(() => { t.classList.remove('show'); setTimeout(() => t.remove(), 300); }, 4000);
+        };
+
+        // =========================================================================
+        // 🧩 MENUS & UI NAVIGATION
+        // =========================================================================
+        const screens = { menu: document.getElementById('main-menu'), forge: document.getElementById('forge-screen'), game: document.getElementById('game-screen'), loading: document.getElementById('loading'), tutorial: document.getElementById('tutorial-screen') };
+
+        window.switchScreen = function(sn) {
+            Object.values(screens).forEach(s => s.classList.add('hidden-screen')); screens[sn].classList.remove('hidden-screen');
+            const tb = document.getElementById('tutorial-btn'); if (tb) tb.classList.toggle('hidden', sn !== 'menu');
+            updateMenuStats();
+            if (sn === 'menu') window.fetchLeaderboard();
+        };
+
+        window.promptName = function(callback) {
+            if (window.playerName && window.playerPin) { callback(); } 
+            else { document.getElementById('name-modal').classList.add('active'); window.pendingAction = callback; }
+        };
+
+        window.submitName = async function() {
+            SFX.click();
+            const btn = document.querySelector('#name-modal button');
+            const originalText = btn.innerText;
+            const input = document.getElementById('player-name-input').value.trim();
+            const pinInput = document.getElementById('player-pin-input').value.trim();
+            const safeId = input.toLowerCase().replace(/[^a-z0-9]/g, '');
+            
+            if (safeId.length < 3) { window.showToast("Nama/Karakter tidak valid (Min. 3 Karakter)"); return; }
+            if (pinInput.length < 4 || isNaN(pinInput)) { window.showToast("PIN harus 4 Angka!"); return; }
+            
+            btn.innerText = "MENYIMPAN..."; btn.classList.add('opacity-70', 'pointer-events-none');
+
+            window.playerName = input; 
+            window.playerId = safeId;
+            window.playerPin = pinInput;
+
+            try {
+                const res = await fetch('/api/submit-score', {
+                    method: 'POST', headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        playerId: window.playerId, name: window.playerName, pin: window.playerPin,
+                        level: window.highestLvl, steps: window.totalSteps, stars: window.totalStars, hintsUsed: window.totalHints
+                    })
+                });
+                
+                if (!res.ok) {
+                    const data = await res.json();
+                    window.showToast(data.error || "Gagal masuk. Cek PIN atau gunakan nama lain.");
+                    btn.innerText = originalText; btn.classList.remove('opacity-70', 'pointer-events-none');
+                    return;
+                }
+                window.showToast(`Selamat datang, ${input}!`);
+            } catch(e) { 
+                console.warn(e);
+                window.showToast("Main offline sementara (Gagal konek server)."); 
+            }
+
+            localStorage.setItem('pastel_account_v3', JSON.stringify({
+                name: window.playerName, id: window.playerId, pin: window.playerPin, 
+                level: window.highestLvl, completedLevels: window.completedLevels, totalHints: window.totalHints
+            }));
+            updateMenuStats();
+            
+            btn.innerText = originalText; btn.classList.remove('opacity-70', 'pointer-events-none');
+            document.getElementById('name-modal').classList.remove('active');
+            
+            if (window.pendingAction) { window.pendingAction(); window.pendingAction = null; }
+        };
+
+        window.continueGame = () => window.promptName(() => playLevel(window.highestLvl));
+        window.openLevelSelect = () => window.promptName(() => {
+            SFX.click(); const grid = document.getElementById('level-grid'); grid.innerHTML = '';
+            let maxDisplay = Math.max(12, Math.ceil(window.highestLvl / 4) * 4);
+            for(let i=1; i<=maxDisplay; i++) {
+                let btn = document.createElement('button');
+                if (i <= window.highestLvl) { 
+                    btn.className = 'level-btn unlocked'; 
+                    if(window.completedLevels[i] && window.completedLevels[i].stars === 3) {
+                        btn.innerHTML = `${i} <span class="absolute top-1 right-1 text-[8px]">⭐</span>`;
+                        btn.classList.add('relative');
+                    } else {
+                        btn.innerText = i; 
+                    }
+                    btn.onclick = () => { window.closeLevelSelect(); playLevel(i); }; 
+                } 
+                else { btn.className = 'level-btn locked'; btn.innerHTML = `<svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z"></path></svg>`; }
+                grid.appendChild(btn);
+            }
+            if(window.highestLvl >= 10) { document.getElementById('forge-unlock-alert').classList.add('hidden'); document.getElementById('forge-access-btn').classList.remove('hidden'); }
+            else { document.getElementById('forge-unlock-alert').classList.remove('hidden'); document.getElementById('forge-access-btn').classList.add('hidden'); }
+            document.getElementById('level-select-modal').classList.add('active');
+        });
+        window.closeLevelSelect = () => { SFX.click(); document.getElementById('level-select-modal').classList.remove('active'); };
+        window.openForge = () => { window.closeLevelSelect(); renderForge(); window.switchScreen('forge'); };
+        window.returnToMenu = () => { SFX.click(); closeModal(); window.switchScreen('menu'); };
+
+        function playLevel(n) { SFX.click(); lvl = n; isCustomMode = false; activeEntityConfig = [...defaultEntities]; window.startGame(false); }
+
+        window.updateBlockCount = function(count) {
+            SFX.click(); [2, 3, 4].forEach(c => { document.getElementById(`btn-bc-${c}`).className = c === count ? "px-4 py-1 rounded-lg text-sm font-black bg-white shadow text-[#73a4f5]" : "px-4 py-1 rounded-lg text-sm font-black text-gray-400"; });
+            if(count > activeEntityConfig.length) while(activeEntityConfig.length < count) activeEntityConfig.push({ rule: 'normal' });
+            else if(count < activeEntityConfig.length) activeEntityConfig = activeEntityConfig.slice(0, count);
+            renderForge();
+        };
+        window.updateBlockRule = function(index, newRule) { SFX.click(); activeEntityConfig[index].rule = newRule; };
+        function renderForge() {
+            const container = document.getElementById('forge-entities');
+            container.innerHTML = activeEntityConfig.map((ent, i) => `
+                <div class="forge-card flex items-center justify-between p-3 border border-gray-100 rounded-2xl bg-gray-50/50">
+                    <div class="flex items-center gap-3">
+                        <div class="w-10 h-10 rounded-xl flex items-center justify-center text-white shadow-sm" style="background: linear-gradient(135deg, var(--c${i+1}-light), var(--c${i+1}))">${ARROW_SVG}</div>
+                        <span class="font-bold text-sm text-gray-700">Blok ${i+1}</span>
+                    </div>
+                    <select onchange="updateBlockRule(${i}, this.value)" class="bg-white border border-gray-200 text-gray-600 text-xs rounded-xl focus:ring-[#73a4f5] focus:border-[#73a4f5] block p-2 shadow-sm font-bold">
+                        ${Object.keys(RULES).map(k => `<option value="${k}" ${ent.rule === k ? 'selected' : ''}>${RULES[k].name}</option>`).join('')}
+                    </select>
+                </div>
+            `).join('');
+        }
+
+        // =========================================================================
+        // 🧠 GAME ENGINE & RENDERER
+        // =========================================================================
+        function updateOverlaps(entities, areaId) {
+            let map = {};
+            entities.forEach((e, i) => { let key = `${e.x},${e.y}`; if(!map[key]) map[key] = []; map[key].push(i); });
+            for(let key in map) {
+                let group = map[key]; let count = group.length;
+                group.forEach((entIndex, subIndex) => {
+                    let dom = document.getElementById(`${areaId}-entity-${entIndex}`); if(!dom) return;
+                    let inner = dom.querySelector('.inner'); let tx = 0, ty = 0, scale = 1;
+                    if(count === 2) { scale = 0.55; if(subIndex === 0) { tx = -20; ty = -20; } else { tx = 20; ty = 20; } } 
+                    else if(count === 3) { scale = 0.45; if(subIndex === 0) { tx = -22; ty = -22; } else if(subIndex === 1) { tx = 22; ty = -22; } else { tx = 0; ty = 22; } } 
+                    else if(count === 4) { scale = 0.45; if(subIndex === 0) { tx = -22; ty = -22; } else if(subIndex === 1) { tx = 22; ty = -22; } else if(subIndex === 2) { tx = -22; ty = 22; } else { tx = 22; ty = 22; } }
+                    inner.style.transform = `translate(${tx}%, ${ty}%) scale(${scale})`;
+                });
+            }
+        }
+
+        function getNextPos(p, dx, dy, walls) {
+            let nx = p.x + dx; let ny = p.y + dy;
+            if (nx < 0 || nx >= SIZE || ny < 0 || ny >= SIZE || walls.some(w => w.x === nx && w.y === ny)) return p;
+            return { x: nx, y: ny };
+        }
+
+        function hashState(entities) { let h = 0; for(let i=0; i<entities.length; i++) h |= ((entities[i].x * 5 + entities[i].y) << (i * 5)); return h; }
+
+        function solve(initEntities, walls, targets, maxIters = 15000) {
+            let q = [{ entities: initEntities, path: [] }]; let visited = new Set(); visited.add(hashState(initEntities)); let iters = 0;
+            const moves = [ {dx: 0, dy: -1}, {dx: 1, dy: -1}, {dx: 1, dy: 0}, {dx: 1, dy: 1}, {dx: 0, dy: 1}, {dx: -1, dy: 1}, {dx: -1, dy: 0}, {dx: -1, dy: -1} ];
+            while (q.length > 0 && iters < maxIters) {
+                iters++; let curr = q.shift(); let win = true;
+                for(let i=0; i<curr.entities.length; i++) if(curr.entities[i].x !== targets[i].x || curr.entities[i].y !== targets[i].y) { win = false; break; }
+                if (win) return curr.path;
+                for (let m of moves) {
+                    let nextEntities = [];
+                    for(let i=0; i<curr.entities.length; i++) {
+                        let mappedMove = RULES[activeEntityConfig[i].rule].calc(m.dx, m.dy);
+                        nextEntities.push(getNextPos(curr.entities[i], mappedMove.x, mappedMove.y, walls));
+                    }
+                    let h = hashState(nextEntities);
+                    if (!visited.has(h)) { visited.add(h); q.push({ entities: nextEntities, path: [...curr.path, m] }); }
+                }
+            } return null; 
+        }
+
+        async function generate() {
+            window.switchScreen('loading');
+            return new Promise(resolve => {
+                setTimeout(() => {
+                    let attempts = 0; const entityCount = activeEntityConfig.length;
+                    const interval = setInterval(() => {
+                        attempts++; let walls = []; let wallCount = Math.min(2 + Math.floor(lvl/5), entityCount >= 4 ? 3 : 5); 
+                        for(let i=0; i<wallCount; i++) {
+                            let wx = Math.floor(Math.random()*SIZE); let wy = Math.floor(Math.random()*SIZE);
+                            if(!walls.some(w => w.x===wx && w.y===wy)) walls.push({x: wx, y: wy});
+                        }
+                        let getPos = (excl) => { let p; do { p = {x: Math.floor(Math.random()*SIZE), y: Math.floor(Math.random()*SIZE)}; } while(walls.some(w => w.x===p.x && w.y===p.y) || excl.some(e => e.x===p.x && e.y===p.y)); return p; };
+                        let targets = []; for(let i=0; i<entityCount; i++) targets.push(getPos(targets));
+                        let entitiesInit = []; for(let i=0; i<entityCount; i++) entitiesInit.push(getPos([...targets, ...entitiesInit]));
+
+                        let path = solve(entitiesInit, walls, targets, 12000); let minSteps = path ? path.length : -1;
+                        let targetMinSteps = Math.min(2 + Math.ceil(lvl/2), 6);
+                        if ((minSteps >= targetMinSteps && minSteps <= 8) || (attempts > 50 && minSteps > 2)) {
+                            clearInterval(interval); resolve({ walls, targets, entitiesInit, parScore: minSteps, path: path });
+                        }
+                    }, 5);
+                }, 100);
+            });
+        }
+
+        const getPerfectTransform = (pos) => `translate(calc(${pos.x * 100}% + ${pos.x * 6}px), calc(${pos.y * 100}% + ${pos.y * 6}px))`;
+
+        function createDOMEntities(areaId, walls, targets, entities, count) {
+            const grid = document.getElementById(`${areaId}-grid-bg`); grid.innerHTML = '';
+            for(let i=0; i<25; i++) { let cell = document.createElement('div'); cell.className = walls.some(w => w.x === (i%5) && w.y === Math.floor(i/5)) ? 'cell cell-wall' : 'cell'; grid.appendChild(cell); }
+            const playArea = document.getElementById(`${areaId}-play-area`);
+            playArea.querySelectorAll('.entity-wrapper, .target-wrapper').forEach(e => e.remove());
+
+            const create = (type, obj, index) => {
+                let wrapper = document.createElement('div'); wrapper.className = `${type}-wrapper`; wrapper.style.width = 'calc((100% - 24px) / 5)'; wrapper.style.height = 'calc((100% - 24px) / 5)'; wrapper.style.transition = 'transform 0.25s cubic-bezier(0.34, 1.56, 0.64, 1)'; wrapper.style.transform = getPerfectTransform(obj); wrapper.id = `${areaId}-${type}-${index}`;
+                let inner = document.createElement('div'); inner.className = type === 'entity' ? `inner c${index}` : `t-inner tc${index}`;
+                if(type === 'entity') { inner.innerHTML = ARROW_SVG; inner.querySelector('.arrow-icon').style.transform = `rotate(${obj.angle}deg)`; }
+                wrapper.appendChild(inner); playArea.appendChild(wrapper);
+            };
+            for(let i=0; i<count; i++) { create('target', targets[i], i); create('entity', entities[i], i); }
+            updateOverlaps(entities, areaId);
+        }
+
+        window.startGame = async function(custom = false) {
+            if(custom) SFX.click();
+            isCustomMode = custom; config = await generate(); setupLevel(); window.switchScreen('game');
+        };
+
+        function updateHintBtn() {
+            const btn = document.getElementById('btn-hint');
+            const iconLock = `<svg class="svg-icon" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z"></path></svg>`;
+            const iconBulb = `<svg class="svg-icon" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9.663 17h4.673M12 3v1m6.364 1.636l-.707.707M21 12h-1M4 12H3m3.343-5.657l-.707-.707m2.828 9.9a5 5 0 117.072 0l-.548.547A3.374 3.374 0 0014 18.469V19a2 2 0 11-4 0v-.531c0-.895-.356-1.754-.988-2.386l-.548-.547z"></path></svg>`;
+
+            if (failCount < HINT_UNLOCK_FAILS) { 
+                btn.innerHTML = `${iconLock} (${HINT_UNLOCK_FAILS - failCount})`; btn.classList.add('opacity-70', 'text-gray-400'); btn.classList.remove('text-[#ff758f]');
+            } else { 
+                btn.innerHTML = `${iconBulb} HINT`; btn.classList.remove('opacity-70', 'text-gray-400'); btn.classList.add('text-[#ff758f]');
+            }
+        }
+
+        function setupLevel() {
+            state.entities = config.entitiesInit.map(e => ({...e, angle: -90})); currentSteps = 0; solutionPath = [...config.path];
+            history = []; starsUsed = { undo: false, hint: false };
+            
+            document.getElementById('mode-display').innerText = isCustomMode ? "MODE KUSTOM (LAB)" : "Tingkat Kesulitan";
+            document.getElementById('lvl-display-container').innerHTML = isCustomMode ? `<span class="text-[#73a4f5] text-lg">PROYEK</span> PARADOX` : `LEVEL <span id="lvl-display" class="text-[#ff758f]">${lvl}</span>`;
+            document.getElementById('par-display').innerText = config.parScore; 
+            document.getElementById('step-display').innerText = `${currentSteps}/${config.parScore + 10}`; 
+            document.getElementById('step-display').style.color = '#73a4f5';
+
+            createDOMEntities('game', config.walls, config.targets, state.entities, activeEntityConfig.length);
+            const container = document.getElementById('legend-container');
+            container.className = `w-full max-w-[340px] mt-6 grid grid-cols-${activeEntityConfig.length} gap-2 text-center text-[10px] font-bold text-gray-500`;
+            container.innerHTML = activeEntityConfig.map((ent, i) => `<div class="bg-white p-2 rounded-xl shadow-sm flex flex-col items-center"><div class="w-4 h-4 mb-1 rounded-full bg-[var(--c${i+1})]"></div>${RULES[ent.rule].name}</div>`).join('');
+            
+            updateHintBtn(); hideHintOverlay(); closeModal();
+        }
+
+        window.move = function(dx, dy) {
+            if (isMoving || isTutorialMode || document.getElementById('modal').classList.contains('active')) return;
+            
+            let nextEntities = []; let moved = false;
+            for(let i=0; i<state.entities.length; i++) {
+                let mappedMove = RULES[activeEntityConfig[i].rule].calc(dx, dy);
+                let targetAngle = Math.atan2(mappedMove.y, mappedMove.x) * 180 / Math.PI;
+                let nPos = getNextPos(state.entities[i], mappedMove.x, mappedMove.y, config.walls);
+                nextEntities.push({...nPos, angle: targetAngle});
+                if(nPos.x !== state.entities[i].x || nPos.y !== state.entities[i].y) moved = true;
+            }
+
+            if (!moved) { SFX.error(); return; }
+
+            SFX.swipe();
+            hideHintOverlay(); 
+            
+            history.push(JSON.parse(JSON.stringify(state))); state.entities = nextEntities; currentSteps++;
+
+            for(let i=0; i<state.entities.length; i++) {
+                let dom = document.getElementById(`game-entity-${i}`);
+                if(dom) { dom.style.transform = getPerfectTransform(state.entities[i]); dom.querySelector('.arrow-icon').style.transform = `rotate(${state.entities[i].angle}deg)`; }
+            }
+            updateOverlaps(state.entities, 'game');
+
+            isMoving = true; 
+            document.getElementById('step-display').innerText = `${currentSteps}/${config.parScore + 10}`; 
+            document.getElementById('step-display').style.color = currentSteps > config.parScore ? '#ff758f' : '#73a4f5';
+            
+            setTimeout(() => {
+                solutionPath = solve(state.entities, config.walls, config.targets, 15000);
+                setTimeout(() => { 
+                    isMoving = false; 
+                    checkWinCondition(); 
+                }, 250); 
+            }, 10);
+        };
+
+        function checkWinCondition() {
+            let win = true; 
+            for(let i=0; i<state.entities.length; i++) { 
+                if(state.entities[i].x !== config.targets[i].x || state.entities[i].y !== config.targets[i].y) win = false; 
+            }
+
+            if (win) { 
+                failCount = 0; // Reset failcount jika berhasil menang
+                handleWin(); 
+            } else {
+                // --- PENGECEKAN KONDISI KALAH ---
+                const limitSteps = config.parScore + 10;
+                const isOutOfSteps = currentSteps >= limitSteps;
+                const isDeadEnd = (!solutionPath); // solve() akan return null jika mustahil diselesaikan dari posisi sekarang
+
+                if (isDeadEnd || isOutOfSteps) {
+                    handleLose(isDeadEnd ? "JALAN BUNTU!" : "KEHABISAN LANGKAH!");
+                }
+            }
+        }
+
+        function handleLose(reason) {
+            SFX.error();
+            failCount++;
+            updateHintBtn();
+
+            const m = document.getElementById('modal'); 
+            const t = document.getElementById('modal-title'); 
+            const d = document.getElementById('modal-desc'); 
+            const b = document.getElementById('modal-btn'); 
+            const sc = document.getElementById('stars-container'); 
+            const pb = document.getElementById('perfect-badge'); 
+            const btnShare = document.getElementById('modal-btn-share');
+            
+            m.classList.add('active'); 
+            pb.classList.add('hidden');
+            sc.style.opacity = 0; 
+
+            t.innerText = "GAME OVER"; 
+            t.className = "text-4xl font-black mb-2 text-[#ff758f] mt-2";
+            d.innerHTML = `${reason}<br><br>Hint akan terbuka setelah kamu kalah ${HINT_UNLOCK_FAILS} kali.<br><b>(Gagal: ${failCount} / ${HINT_UNLOCK_FAILS})</b>`;
+            
+            b.innerText = "RESET LEVEL"; 
+            b.className = "flex-1 py-4 rounded-2xl font-black text-white shadow-xl bg-gradient-to-r from-[#ff758f] to-[#ff9eb1] active:scale-95 transition-transform";
+            b.onclick = () => { SFX.click(); closeModal(); restartLevel(); };
+
+            // Modifikasi tombol Share untuk menjadi tombol "UNDO" di layar Game Over
+            btnShare.classList.remove('hidden');
+            btnShare.className = "w-[60px] py-4 rounded-2xl font-black text-white shadow-xl bg-gray-400 active:scale-95 transition-transform flex items-center justify-center";
+            btnShare.innerHTML = `<svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 10h10a8 8 0 018 8v2M3 10l6 6m-6-6l6-6"></path></svg>`;
+            btnShare.onclick = () => {
+                SFX.click();
+                closeModal();
+                window.undo();
+            };
+        }
+
+        function handleWin() {
+            SFX.win();
+            
+            let diff = currentSteps - config.parScore;
+            let stars = 3;
+            if (diff > 0 && diff <= 3) stars = 2;
+            else if (diff > 3) stars = 1;
+
+            if (starsUsed.hint) stars = 1; 
+            else if (starsUsed.undo) stars = Math.max(1, stars - 1); 
+
+            currentStarsGained = stars;
+
+            if(!isCustomMode) {
+                let currentBest = window.completedLevels[lvl];
+                let isNewRecord = false;
+
+                if (!currentBest || stars > currentBest.stars || (stars === currentBest.stars && currentSteps < currentBest.steps)) {
+                    window.completedLevels[lvl] = {
+                        stars: Math.max(stars, currentBest ? currentBest.stars : 0),
+                        steps: currentBest ? Math.min(currentSteps, currentBest.steps) : currentSteps
+                    };
+                    isNewRecord = true;
+                    
+                    window.totalStars = Object.values(window.completedLevels).reduce((sum, l) => sum + (l.stars || 0), 0);
+                    window.totalSteps = Object.values(window.completedLevels).reduce((sum, l) => sum + (l.steps || 0), 0);
+                }
+
+                if(lvl >= window.highestLvl) window.highestLvl = lvl + 1; 
+                if(starsUsed.hint) window.totalHints++;
+
+                localStorage.setItem('pastel_account_v3', JSON.stringify({
+                    name: window.playerName, id: window.playerId, pin: window.playerPin, 
+                    level: window.highestLvl, completedLevels: window.completedLevels, totalHints: window.totalHints
+                }));
+                
+                if (isNewRecord || lvl >= window.highestLvl) {
+                    if (window.syncScoreToCloud) window.syncScoreToCloud();
+                }
+            }
+            confetti({ particleCount: 150, spread: 100, origin: { y: 0.5 }, colors: COLORS });
+            setTimeout(() => showModal('win'), 500);
+        }
+
+        function showModal(res) {
+            const m = document.getElementById('modal'); const t = document.getElementById('modal-title'); const d = document.getElementById('modal-desc'); const b = document.getElementById('modal-btn'); const sc = document.getElementById('stars-container'); const pb = document.getElementById('perfect-badge'); const btnShare = document.getElementById('modal-btn-share');
+            m.classList.add('active'); pb.classList.add('hidden');
+            
+            sc.innerHTML = `<svg class="w-8 h-8 text-[#ffd166]" fill="currentColor" viewBox="0 0 20 20"><path d="M9.049 2.927c.3-.921 1.603-.921 1.902 0l1.07 3.292a1 1 0 00.95.69h3.462c.969 0 1.371 1.24.588 1.81l-2.8 2.034a1 1 0 00-.364 1.118l1.07 3.292c.3.921-.755 1.688-1.54 1.118l-2.8-2.034a1 1 0 00-1.175 0l-2.8 2.034c-.784.57-1.838-.197-1.539-1.118l1.07-3.292a1 1 0 00-.364-1.118L2.98 8.72c-.783-.57-.38-1.81.588-1.81h3.461a1 1 0 00.951-.69l1.07-3.292z"/></svg>`.repeat(currentStarsGained) + `<svg class="w-8 h-8 text-gray-200" fill="currentColor" viewBox="0 0 20 20"><path d="M9.049 2.927c.3-.921 1.603-.921 1.902 0l1.07 3.292a1 1 0 00.95.69h3.462c.969 0 1.371 1.24.588 1.81l-2.8 2.034a1 1 0 00-.364 1.118l1.07 3.292c.3.921-.755 1.688-1.54 1.118l-2.8-2.034a1 1 0 00-1.175 0l-2.8 2.034c-.784.57-1.838-.197-1.539-1.118l1.07-3.292a1 1 0 00-.364-1.118L2.98 8.72c-.783-.57-.38-1.81.588-1.81h3.461a1 1 0 00.951-.69l1.07-3.292z"/></svg>`.repeat(3 - currentStarsGained); 
+            sc.style.opacity = 1; 
+            
+            if (currentStarsGained === 3 && currentSteps <= config.parScore) pb.classList.remove('hidden');
+            
+            t.innerText = isCustomMode ? "UJI COBA SUKSES!" : "BRILIAN!"; t.className = "text-4xl font-black mb-2 text-[#73a4f5] mt-2";
+            
+            let isReplay = window.completedLevels[lvl] && currentSteps >= window.completedLevels[lvl].steps;
+            d.innerText = isCustomMode ? "Rancangan omni-directional diselesaikan." : 
+                (isReplay ? `Level selesai lagi! (Rekor terbaikmu: ${window.completedLevels[lvl].steps} langkah)` : `Paradox level ${lvl} ditaklukkan dengan rekor baru ${currentSteps} langkah!`);
+            
+            b.innerText = isCustomMode ? "KEMBALI KE LAB" : "LEVEL BERIKUTNYA"; 
+            b.className = "flex-1 py-4 rounded-2xl font-black text-white shadow-xl bg-gradient-to-r from-[#73a4f5] to-[#9dbff9] active:scale-95 transition-transform";
+            
+            // Mengembalikan tombol Share jika sebelumnya terubah oleh modal Game Over
+            btnShare.classList.remove('hidden');
+            btnShare.className = "w-[60px] py-4 rounded-2xl font-black text-white shadow-xl bg-[#96e6a1] active:scale-95 transition-transform flex items-center justify-center";
+            btnShare.innerHTML = `<svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8.684 13.342C8.886 12.938 9 12.482 9 12c0-.482-.114-.938-.316-1.342m0 2.684a3 3 0 110-2.684m0 2.684l6.632 3.316m-6.632-6l6.632-3.316m0 0a3 3 0 105.367-2.684 3 3 0 00-5.367 2.684zm0 9.316a3 3 0 105.368 2.684 3 3 0 00-5.368-2.684z"></path></svg>`;
+            btnShare.onclick = window.shareScore;
+
+            b.onclick = async () => { SFX.click(); if(isCustomMode) { window.switchScreen('forge'); closeModal(); } else { lvl++; await window.startGame(false); } };
+        }
+        
+        function closeModal() { document.getElementById('modal').classList.remove('active'); }
+
+        window.shareScore = function() {
+            SFX.click();
+            const textToShare = `Menyala Abangku! 🔥\nSaya tembus Level ${lvl} di Pastel Paradox dengan ${currentStarsGained} Bintang. Otakmu sanggup ngalahin @${window.playerName}? 😎`;
+            try { document.execCommand('copy'); navigator.clipboard.writeText(textToShare).then(() => window.showToast("Teks disalin! Silakan paste ke Chat temanmu.")).catch(() => window.showToast("Gagal menyalin, perangkat tidak mendukung.")); } 
+            catch(err) { window.showToast("Teks berhasil disalin!"); }
+        }
+
+        window.undo = function() {
+            SFX.click();
+            if (history.length > 0 && !isMoving) {
+                starsUsed.undo = true; state = history.pop(); currentSteps--; 
+                hideHintOverlay();
+                
+                for(let i=0; i<state.entities.length; i++) {
+                    let dom = document.getElementById(`game-entity-${i}`);
+                    if(dom) { dom.style.transform = getPerfectTransform(state.entities[i]); dom.querySelector('.arrow-icon').style.transform = `rotate(${state.entities[i].angle}deg)`; }
+                }
+                updateOverlaps(state.entities, 'game'); 
+                document.getElementById('step-display').innerText = `${currentSteps}/${config.parScore + 10}`; 
+                document.getElementById('step-display').style.color = currentSteps > config.parScore ? '#ff758f' : '#73a4f5';
+
+                isMoving = true;
+                setTimeout(() => {
+                    solutionPath = solve(state.entities, config.walls, config.targets, 15000);
+                    isMoving = false;
+                }, 10);
+            }
+        };
+
+        window.restartLevel = function() { 
+            SFX.click(); 
+            // Dulu failCount++ ada disini, sekarang dihapus karena hanya bertambah jika benar-benar KALAH.
+            setupLevel(); 
+        };
+
+        window.showHint = function() {
+            SFX.click();
+            if (failCount < HINT_UNLOCK_FAILS) { 
+                window.showToast(`Hint Terkunci! Kamu harus mengalami KALAH ${HINT_UNLOCK_FAILS - failCount}x lagi (Jalan Buntu / Habis Langkah).`); 
+                return; 
+            }
+            if(isMoving || !solutionPath || solutionPath.length === 0) return;
+            starsUsed.hint = true;
+            const overlay = document.getElementById('hint-overlay'); const arrow = document.getElementById('hint-arrow');
+            let angle = Math.atan2(solutionPath[0].dy, solutionPath[0].dx) * 180 / Math.PI;
+            arrow.style.transform = `translate(-50%, -50%) rotate(${angle}deg)`;
+            overlay.classList.remove('hidden'); setTimeout(() => { arrow.style.opacity = 1; }, 10);
+        };
+
+        function hideHintOverlay() {
+            const overlay = document.getElementById('hint-overlay'); const arrow = document.getElementById('hint-arrow');
+            arrow.style.opacity = 0; setTimeout(() => { overlay.classList.add('hidden'); }, 300);
+        }
+
+        // =========================================================================
+        // 📖 TUTORIAL LOGIC
+        // =========================================================================
+        const TUTORIAL_DATA = { 
+            walls: [{x: 2, y: 2}, {x: 1, y: 3}, {x: 3, y: 1}], 
+            entitiesInit: [ {x: 0, y: 0}, {x: 4, y: 0}, {x: 0, y: 4} ], 
+            rules: ['normal', 'reverse', 'rotateRight'], 
+            moves: [ 
+                {dx: 1, dy: 1, desc: "Selamat datang di Pastel Paradox! Targetmu: capai 'Langkah Akurat'. Coba swipe Kanan-Bawah. Liat kan? Blok Biru malah mundur."}, 
+                {dx: 0, dy: 1, desc: "Di game ini, kamu harus mikir Out of the Box. Swipe Bawah. Blok Hijau akan belok Kiri karena sifat 90°-nya."}, 
+                {dx: 1, dy: -1, desc: "Swipe Kanan-Atas. Setiap blok punya sifat pergerakannya masing-masing (lihat arah panahnya)."}, 
+                {dx: -1, dy: 0, desc: "Swipe Kiri. Kalau ada blok bertabrakan, mereka nggak hancur, tapi mengecil buat berbagi tempat."}, 
+                {dx: 1, dy: 1, desc: "Swipe Kanan-Bawah. Arah panah selalu ngasih tau ke mana mereka bakal gerak selanjutnya."}, 
+                {dx: 0, dy: -1, desc: "Swipe Atas. Perhatikan tembok abu-abu, mereka akan ngeblok gerakanmu."}, 
+                {dx: -1, dy: -1, desc: "Swipe Kiri-Atas. Ini puzzle 8-Arah (Omni-Directional). Gerakan diagonal/serong sangat krusial!"}, 
+                {dx: 1, dy: 0, desc: "Swipe Kanan. Ingat, kamu dinilai dari jumlah Langkah. Makin hemat swipe, makin banyak Bintang!"}, 
+                {dx: -1, dy: 1, desc: "Swipe Kiri-Bawah. Jangan asal geser, pikirkan efisiensi pergerakan mereka."}, 
+                {dx: 0, dy: 1, desc: "Swipe Bawah. Wah, makin dekat ke titik target warna masing-masing nih...!"}, 
+                {dx: 1, dy: -1, desc: "Swipe Kanan-Atas. Terus ikuti petunjuk!"}, 
+                {dx: -1, dy: 0, desc: "Swipe Kiri. Hati-hati, perhatikan posisinya."}, 
+                {dx: -1, dy: -1, desc: "Swipe Kiri-Atas. Hampir masuk semua ke target lingkaran."}, 
+                {dx: 0, dy: 1, desc: "Swipe Bawah. Jika mentok, layar Game Over akan muncul dan membuka potensi tombol Hint."}, 
+                {dx: 1, dy: 1, desc: "Swipe Kanan-Bawah. Langkah penentuan... siap-siap!"}, 
+                {dx: -1, dy: 0, desc: "Swipe Kiri. Boom! Gampang? Awas, level aslinya jauh lebih sadis. Buktikan kamu yang paling Akurat!"} 
+            ] 
+        };
+        
+        window.startTutorial = function() {
+            SFX.click(); isTutorialMode = true; tutStep = 0; window.switchScreen('tutorial');
+            let targetSim = TUTORIAL_DATA.entitiesInit.map(e => ({...e}));
+            for(let m of TUTORIAL_DATA.moves) { for(let i=0; i<targetSim.length; i++) { let mapped = RULES[TUTORIAL_DATA.rules[i]].calc(m.dx, m.dy); targetSim[i] = getNextPos(targetSim[i], mapped.x, mapped.y, TUTORIAL_DATA.walls); } }
+            tutEntities = TUTORIAL_DATA.entitiesInit.map(e => ({...e, angle: -90}));
+            createDOMEntities('tut', TUTORIAL_DATA.walls, targetSim, tutEntities, 3); showTutorialDialog();
+        };
+        function showTutorialDialog() {
+            if(!isTutorialMode) return; const desc = document.getElementById('tut-desc'); const nextText = document.getElementById('tut-next-text');
+            if(tutStep < TUTORIAL_DATA.moves.length) { document.getElementById('tut-step-display').innerText = `${tutStep+1}/${TUTORIAL_DATA.moves.length}`; desc.innerText = TUTORIAL_DATA.moves[tutStep].desc; nextText.innerText = "TAP BUAT LANJUT >>"; nextText.classList.remove('hidden'); } 
+            else { desc.innerText = "TUTORIAL SELESAI! Bersiaplah masuk ke daftar Top 10 Global."; nextText.classList.add('hidden'); SFX.win(); confetti({ particleCount: 150, spread: 100, origin: { y: 0.5 }, colors: COLORS }); setTimeout(window.stopTutorial, 3000); }
+        }
+        window.executeTutorialMove = function() {
+            if(!isTutorialMode || tutStep >= TUTORIAL_DATA.moves.length) return; SFX.swipe();
+            let m = TUTORIAL_DATA.moves[tutStep];
+            for(let i=0; i<tutEntities.length; i++) { let mapped = RULES[TUTORIAL_DATA.rules[i]].calc(m.dx, m.dy); let targetAngle = Math.atan2(mapped.y, mapped.x) * 180 / Math.PI; tutEntities[i] = {...getNextPos(tutEntities[i], mapped.x, mapped.y, TUTORIAL_DATA.walls), angle: targetAngle}; }
+            for(let i=0; i<tutEntities.length; i++) { let dom = document.getElementById(`tut-entity-${i}`); if(dom) { dom.style.transform = getPerfectTransform(tutEntities[i]); dom.querySelector('.arrow-icon').style.transform = `rotate(${tutEntities[i].angle}deg)`; } }
+            updateOverlaps(tutEntities, 'tut'); tutStep++; setTimeout(showTutorialDialog, 400); 
+        };
+        window.stopTutorial = function() { SFX.click(); isTutorialMode = false; window.switchScreen('menu'); };
+
+        // =========================================================================
+        // 🕹️ INPUT LISTENERS (TOUCH & KEYBOARD)
+        // =========================================================================
+        let tsX = 0, tsY = 0;
+        
+        document.addEventListener('touchstart', e => { 
+            if (e.target.closest('button, .btn-glass, .tut-dialog, .modal-content')) {
+                window.isSwipeValid = false;
+                return;
+            }
+            window.isSwipeValid = true;
+            tsX = e.touches[0].clientX; 
+            tsY = e.touches[0].clientY; 
+        }, {passive: false});
+
+        document.addEventListener('touchmove', e => { 
+            if(!screens.game.classList.contains('hidden-screen') && e.cancelable) e.preventDefault(); 
+        }, {passive: false});
+
+        document.addEventListener('touchend', e => {
+            if(!window.isSwipeValid || screens.game.classList.contains('hidden-screen') || isTutorialMode) return;
+            window.isSwipeValid = false;
+            let dx = e.changedTouches[0].clientX - tsX; let dy = e.changedTouches[0].clientY - tsY;
+            if (Math.hypot(dx, dy) > 30) { 
+                let rad = Math.round(Math.atan2(dy, dx) * 180 / Math.PI / 45) * 45 * Math.PI / 180; 
+                window.move(Math.round(Math.cos(rad)), Math.round(Math.sin(rad))); 
+            }
+        });
+
+        document.addEventListener('keydown', e => {
+            if(screens.game.classList.contains('hidden-screen') || isTutorialMode) return; const key = e.key.toLowerCase();
+            if(key === 'arrowup' || key === 'w' || key === '8') window.move(0, -1); else if(key === 'arrowdown' || key === 's' || key === '2') window.move(0, 1);
+            else if(key === 'arrowleft' || key === 'a' || key === '4') window.move(-1, 0); else if(key === 'arrowright' || key === 'd' || key === '6') window.move(1, 0);
+            else if(key === 'q' || key === '7') window.move(-1, -1); else if(key === 'e' || key === '9') window.move(1, -1);  
+            else if(key === 'z' || key === '1') window.move(-1, 1); else if(key === 'c' || key === '3') window.move(1, 1);   
+        });
+
+        // Initial Load Event
+        window.addEventListener('load', () => { if (!screens.menu.classList.contains('hidden-screen')) window.fetchLeaderboard(); });
+    </script>
+</body>
+</html>
+
+
