@@ -1,28 +1,34 @@
 
-import { Redis } from '@upstash/redis'
+import { createClient } from '@supabase/supabase-js';
 
-// Pastikan untuk mendaftarkan variabel environment ini di dashboard Vercel milikmu!
-const redis = new Redis({
-    url: process.env.UPSTASH_REDIS_REST_URL,
-    token: process.env.UPSTASH_REDIS_REST_TOKEN,
-})
+// Gunakan service-role key hanya di server/Vercel, jangan ditaruh di index.html.
+const supabaseUrl = process.env.SUPABASE_URL;
+const supabaseKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
+const supabase = supabaseUrl && supabaseKey ? createClient(supabaseUrl, supabaseKey) : null;
 
 export default async function handler(req, res) {
     if (req.method !== 'POST') {
         return res.status(405).json({ error: 'Method not allowed' });
     }
+    if (!supabase) {
+        return res.status(500).json({ error: 'Supabase belum dikonfigurasi.' });
+    }
 
-    const { playerId, name, level, steps, stars, hintsUsed, pin } = req.body;
+    const { playerId, name, level, steps, stars, hintsUsed, hintBalance, pin } = req.body;
 
     // Validasi payload dasar
     if (!playerId || !name || !pin) {
         return res.status(400).json({ error: 'Missing required fields' });
     }
 
-    const userKey = `player:${playerId}`;
-    
     try {
-        const existingUser = await redis.hgetall(userKey);
+        const { data: existingUser, error: lookupError } = await supabase
+            .from('players')
+            .select('player_uid, pin, level')
+            .eq('player_uid', String(playerId))
+            .maybeSingle();
+
+        if (lookupError) throw lookupError;
 
         // Jika user sudah ada tapi PIN yang dikirim salah
         if (existingUser && existingUser.pin && existingUser.pin !== String(pin)) {
@@ -37,40 +43,41 @@ export default async function handler(req, res) {
             }
         }
 
-        // Membangun Komposit Score untuk sistem ranking ZADD
-        // Urutan: Level (Terbesar) -> Bintang (Terbesar) -> Steps (Terkecil) -> Hints (Terkecil)
-        const MAX_STEPS = 100000;
-        const MAX_HINTS = 10000;
-        
-        // Membalik step dan hint agar nilai yang lebih kecil menghasilkan score yang lebih besar
-        const safeSteps = Math.max(0, MAX_STEPS - Number(steps));
-        const safeHints = Math.max(0, MAX_HINTS - Number(hintsUsed));
-        
-        // Score = (Level * 100juta) + (Stars * 100ribu) + (InverseSteps * 100) + InverseHints
-        const score = (Number(level) * 100000000) 
-                    + (Number(stars) * 100000) 
-                    + (safeSteps * 100) 
-                    + safeHints;
+        const safePlayer = {
+            player_uid: String(playerId),
+            username: String(name).substring(0, 15),
+            pin: String(pin),
+            level: Number(level) || 1,
+            total_stars: Number(stars) || 0,
+            total_steps: Number(steps) || 0,
+            total_hints: Number(hintsUsed) || 0,
+            updated_at: new Date().toISOString()
+        };
+        if (Number.isFinite(Number(hintBalance))) {
+            safePlayer.hint_balance = Math.max(0, Math.min(5, Number(hintBalance)));
+        }
 
-        // Simpan detail player ke Hash Table
-        await redis.hset(userKey, {
-            id: playerId,
-            name: String(name).substring(0, 15),
-            pin: String(pin), // Tidak dienkripsi penuh karena hanya recovery id ringan
-            level: Number(level),
-            totalStars: Number(stars),
-            totalSteps: Number(steps),
-            totalHints: Number(hintsUsed),
-            updatedAt: Date.now()
+        const { data: savedPlayer, error: saveError } = await supabase
+            .from('players')
+            .upsert(safePlayer, { onConflict: 'player_uid' })
+            .select('player_uid, hint_balance')
+            .single();
+
+        if (saveError) throw saveError;
+
+        const { error: scoreError } = await supabase.from('scores').insert({
+            player_uid: String(playerId),
+            score: Number(stars) || 0,
+            time_used: 0,
+            hints_used: Number(hintsUsed) || 0
         });
 
-        // Masukkan / Update skor player di Sorted Set leaderboard
-        await redis.zadd('leaderboard', { score, member: playerId });
+        if (scoreError) throw scoreError;
 
-        return res.status(200).json({ success: true });
+        return res.status(200).json({ success: true, hintBalance: savedPlayer?.hint_balance ?? 3 });
         
     } catch (error) {
-        console.error("Redis Error:", error);
+        console.error("Supabase score error:", error);
         return res.status(500).json({ error: 'Terjadi kesalahan internal pada server' });
     }
 }

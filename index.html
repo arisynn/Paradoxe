@@ -238,7 +238,7 @@
                 UNDO
             </button>
             <button id="btn-hint" onclick="showHint()" class="flex-1 btn-glass py-3 rounded-2xl font-black text-[#ff758f] text-sm transition-all">
-                HINT
+                HINT <span id="hint-count" class="ml-1 inline-flex min-w-5 h-5 px-1 items-center justify-center rounded-full bg-[#ff758f] text-white text-[10px]">3</span>
             </button>
             <button onclick="restartLevel()" class="flex-1 btn-glass py-3 rounded-2xl font-black text-gray-500 text-sm">
                 <svg class="svg-icon" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"></path></svg>
@@ -251,7 +251,7 @@
     <div id="tutorial-screen" class="screen hidden-screen justify-start pt-8 px-4 z-[300]">
         <div class="w-full max-w-[340px] flex justify-between items-end mb-4">
             <h2 class="text-3xl font-black text-gray-800 leading-none tracking-tighter">TUTORIAL</h2>
-            <div class="text-xs font-bold text-gray-400 uppercase">Langkah <span id="tut-step-display" class="text-[#73a4f5] text-lg font-black">1/16</span></div>
+            <div class="text-xs font-bold text-gray-400 uppercase">Langkah <span id="tut-step-display" class="text-[#73a4f5] text-lg font-black">1/8</span></div>
         </div>
         <div class="board-container mb-4">
             <div id="tut-play-area" class="play-area">
@@ -321,7 +321,7 @@
     <!-- MAIN GAME LOGIC -->
     <script>
         // =========================================================================
-        // ☁️ API BACKEND LOGIC (MENGGANTIKAN FIREBASE)
+        // ☁️ API BACKEND LOGIC (SUPABASE)
         // =========================================================================
         
         window.fetchLeaderboard = async () => {
@@ -356,7 +356,8 @@
                         level: window.highestLvl,
                         steps: window.totalSteps,
                         stars: window.totalStars,
-                        hintsUsed: window.totalHints
+                        hintsUsed: window.totalHints,
+                        hintBalance: window.hintBalance
                     })
                 });
             } catch(e) { console.warn("Gagal sync ke server cloud:", e); }
@@ -399,8 +400,12 @@
         const ARROW_SVG = '<svg class="arrow-icon" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="4" d="M5 12h14M12 5l7 7-7 7"/></svg>';
         
         // --- HINT SYSTEM CONFIG ---
-        const HINT_UNLOCK_FAILS = 5;
-        let failCount = 0; 
+        const STARTING_HINTS = 3;
+        const MAX_HINTS = 5;
+        const HINT_REWARD_LOSSES = 3;
+        const HINT_DISPLAY_MS = 2600;
+        let failCount = 0;
+        let hintTimer = null;
         
         // --- ACCOUNT SYSTEM SETUP ---
         let localAccountData = localStorage.getItem('pastel_account_v3');
@@ -412,11 +417,13 @@
             window.highestLvl = data.level || 1; 
             window.completedLevels = data.completedLevels || {};
             window.totalHints = data.totalHints || 0;
+            window.hintBalance = Number.isFinite(Number(data.hintBalance)) ? Number(data.hintBalance) : STARTING_HINTS;
             
             window.totalStars = Object.values(window.completedLevels).reduce((sum, lvl) => sum + (lvl.stars || 0), 0);
             window.totalSteps = Object.values(window.completedLevels).reduce((sum, lvl) => sum + (lvl.steps || 0), 0);
         } else {
             window.highestLvl = 1; window.totalStars = 0; window.totalSteps = 0; window.totalHints = 0;
+            window.hintBalance = STARTING_HINTS;
             window.completedLevels = {};
         }
         let lvl = window.highestLvl;
@@ -428,6 +435,15 @@
             document.getElementById('total-steps-display').innerText = window.totalSteps;
         }
         updateMenuStats();
+
+        function saveLocalAccount() {
+            if (!window.playerName || !window.playerId) return;
+            localStorage.setItem('pastel_account_v3', JSON.stringify({
+                name: window.playerName, id: window.playerId, pin: window.playerPin,
+                level: window.highestLvl, completedLevels: window.completedLevels,
+                totalHints: window.totalHints, hintBalance: window.hintBalance
+            }));
+        }
 
         const RULES = {
             normal: { name: "Normal (Lurus)", calc: (dx, dy) => ({x: dx, y: dy}) },
@@ -512,26 +528,25 @@
                     method: 'POST', headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify({
                         playerId: window.playerId, name: window.playerName, pin: window.playerPin,
-                        level: window.highestLvl, steps: window.totalSteps, stars: window.totalStars, hintsUsed: window.totalHints
+                        level: window.highestLvl, steps: window.totalSteps, stars: window.totalStars,
+                        hintsUsed: window.totalHints, hintBalance: window.hintBalance
                     })
                 });
                 
+                const data = await res.json().catch(() => ({}));
                 if (!res.ok) {
-                    const data = await res.json();
                     window.showToast(data.error || "Gagal masuk. Cek PIN atau gunakan nama lain.");
                     btn.innerText = originalText; btn.classList.remove('opacity-70', 'pointer-events-none');
                     return;
                 }
+                if (Number.isFinite(Number(data.hintBalance))) window.hintBalance = Number(data.hintBalance);
                 window.showToast(`Selamat datang, ${input}!`);
             } catch(e) { 
                 console.warn(e);
                 window.showToast("Main offline sementara (Gagal konek server)."); 
             }
 
-            localStorage.setItem('pastel_account_v3', JSON.stringify({
-                name: window.playerName, id: window.playerId, pin: window.playerPin, 
-                level: window.highestLvl, completedLevels: window.completedLevels, totalHints: window.totalHints
-            }));
+            saveLocalAccount();
             updateMenuStats();
             
             btn.innerText = originalText; btn.classList.remove('opacity-70', 'pointer-events-none');
@@ -690,11 +705,11 @@
             const iconLock = `<svg class="svg-icon" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z"></path></svg>`;
             const iconBulb = `<svg class="svg-icon" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9.663 17h4.673M12 3v1m6.364 1.636l-.707.707M21 12h-1M4 12H3m3.343-5.657l-.707-.707m2.828 9.9a5 5 0 117.072 0l-.548.547A3.374 3.374 0 0014 18.469V19a2 2 0 11-4 0v-.531c0-.895-.356-1.754-.988-2.386l-.548-.547z"></path></svg>`;
 
-            if (failCount < HINT_UNLOCK_FAILS) { 
-                btn.innerHTML = `${iconLock} (${HINT_UNLOCK_FAILS - failCount})`; btn.classList.add('opacity-70', 'text-gray-400'); btn.classList.remove('text-[#ff758f]');
-            } else { 
-                btn.innerHTML = `${iconBulb} HINT`; btn.classList.remove('opacity-70', 'text-gray-400'); btn.classList.add('text-[#ff758f]');
-            }
+            const balance = Math.max(0, Number(window.hintBalance || 0));
+            btn.innerHTML = `${balance > 0 ? iconBulb : iconLock} HINT <span id="hint-count" class="ml-1 inline-flex min-w-5 h-5 px-1 items-center justify-center rounded-full ${balance > 0 ? 'bg-[#ff758f]' : 'bg-gray-400'} text-white text-[10px]">${balance}</span>`;
+            btn.classList.toggle('opacity-70', balance === 0);
+            btn.classList.toggle('text-gray-400', balance === 0);
+            btn.classList.toggle('text-[#ff758f]', balance > 0);
         }
 
         function setupLevel() {
@@ -777,6 +792,12 @@
         function handleLose(reason) {
             SFX.error();
             failCount++;
+            let rewardText = '';
+            if (failCount % HINT_REWARD_LOSSES === 0 && Number(window.hintBalance || 0) < MAX_HINTS) {
+                window.hintBalance = Math.min(MAX_HINTS, Number(window.hintBalance || 0) + 1);
+                rewardText = '<br><b>+1 Hint</b> karena kamu tetap mencoba.';
+                saveLocalAccount();
+            }
             updateHintBtn();
 
             const m = document.getElementById('modal'); 
@@ -793,7 +814,7 @@
 
             t.innerText = "GAME OVER"; 
             t.className = "text-4xl font-black mb-2 text-[#ff758f] mt-2";
-            d.innerHTML = `${reason}<br><br>Hint akan terbuka setelah kamu kalah ${HINT_UNLOCK_FAILS} kali.<br><b>(Gagal: ${failCount} / ${HINT_UNLOCK_FAILS})</b>`;
+            d.innerHTML = `${reason}<br><br>Hint tersisa: <b>${window.hintBalance || 0}</b>.<br>Setiap ${HINT_REWARD_LOSSES} kali gagal, kamu mendapat 1 Hint (maks. ${MAX_HINTS}).${rewardText}`;
             
             b.innerText = "RESET LEVEL"; 
             b.className = "flex-1 py-4 rounded-2xl font-black text-white shadow-xl bg-gradient-to-r from-[#ff758f] to-[#ff9eb1] active:scale-95 transition-transform";
@@ -841,10 +862,7 @@
                 if(lvl >= window.highestLvl) window.highestLvl = lvl + 1; 
                 if(starsUsed.hint) window.totalHints++;
 
-                localStorage.setItem('pastel_account_v3', JSON.stringify({
-                    name: window.playerName, id: window.playerId, pin: window.playerPin, 
-                    level: window.highestLvl, completedLevels: window.completedLevels, totalHints: window.totalHints
-                }));
+                saveLocalAccount();
                 
                 if (isNewRecord || lvl >= window.highestLvl) {
                     if (window.syncScoreToCloud) window.syncScoreToCloud();
@@ -920,16 +938,25 @@
 
         window.showHint = function() {
             SFX.click();
-            if (failCount < HINT_UNLOCK_FAILS) { 
-                window.showToast(`Hint Terkunci! Kamu harus mengalami KALAH ${HINT_UNLOCK_FAILS - failCount}x lagi (Jalan Buntu / Habis Langkah).`); 
+            if (Number(window.hintBalance || 0) <= 0) {
+                window.showToast(`Hint habis. Kamu mendapat 1 Hint setiap ${HINT_REWARD_LOSSES} kali gagal.`);
                 return; 
             }
-            if(isMoving || !solutionPath || solutionPath.length === 0) return;
+            if(isMoving || !solutionPath || solutionPath.length === 0) {
+                window.showToast('Belum ada langkah solusi yang bisa ditunjukkan.');
+                return;
+            }
+            window.hintBalance = Math.max(0, Number(window.hintBalance) - 1);
+            saveLocalAccount();
+            updateHintBtn();
             starsUsed.hint = true;
             const overlay = document.getElementById('hint-overlay'); const arrow = document.getElementById('hint-arrow');
             let angle = Math.atan2(solutionPath[0].dy, solutionPath[0].dx) * 180 / Math.PI;
             arrow.style.transform = `translate(-50%, -50%) rotate(${angle}deg)`;
             overlay.classList.remove('hidden'); setTimeout(() => { arrow.style.opacity = 1; }, 10);
+            clearTimeout(hintTimer);
+            hintTimer = setTimeout(hideHintOverlay, HINT_DISPLAY_MS);
+            window.showToast('Hint gebruikt: volg de pijl voor je volgende swipe.');
         };
 
         function hideHintOverlay() {
@@ -944,24 +971,16 @@
             walls: [{x: 2, y: 2}, {x: 1, y: 3}, {x: 3, y: 1}], 
             entitiesInit: [ {x: 0, y: 0}, {x: 4, y: 0}, {x: 0, y: 4} ], 
             rules: ['normal', 'reverse', 'rotateRight'], 
-            moves: [ 
-                {dx: 1, dy: 1, desc: "Selamat datang di Pastel Paradox! Targetmu: capai 'Langkah Akurat'. Coba swipe Kanan-Bawah. Liat kan? Blok Biru malah mundur."}, 
-                {dx: 0, dy: 1, desc: "Di game ini, kamu harus mikir Out of the Box. Swipe Bawah. Blok Hijau akan belok Kiri karena sifat 90°-nya."}, 
-                {dx: 1, dy: -1, desc: "Swipe Kanan-Atas. Setiap blok punya sifat pergerakannya masing-masing (lihat arah panahnya)."}, 
-                {dx: -1, dy: 0, desc: "Swipe Kiri. Kalau ada blok bertabrakan, mereka nggak hancur, tapi mengecil buat berbagi tempat."}, 
-                {dx: 1, dy: 1, desc: "Swipe Kanan-Bawah. Arah panah selalu ngasih tau ke mana mereka bakal gerak selanjutnya."}, 
-                {dx: 0, dy: -1, desc: "Swipe Atas. Perhatikan tembok abu-abu, mereka akan ngeblok gerakanmu."}, 
-                {dx: -1, dy: -1, desc: "Swipe Kiri-Atas. Ini puzzle 8-Arah (Omni-Directional). Gerakan diagonal/serong sangat krusial!"}, 
-                {dx: 1, dy: 0, desc: "Swipe Kanan. Ingat, kamu dinilai dari jumlah Langkah. Makin hemat swipe, makin banyak Bintang!"}, 
-                {dx: -1, dy: 1, desc: "Swipe Kiri-Bawah. Jangan asal geser, pikirkan efisiensi pergerakan mereka."}, 
-                {dx: 0, dy: 1, desc: "Swipe Bawah. Wah, makin dekat ke titik target warna masing-masing nih...!"}, 
-                {dx: 1, dy: -1, desc: "Swipe Kanan-Atas. Terus ikuti petunjuk!"}, 
-                {dx: -1, dy: 0, desc: "Swipe Kiri. Hati-hati, perhatikan posisinya."}, 
-                {dx: -1, dy: -1, desc: "Swipe Kiri-Atas. Hampir masuk semua ke target lingkaran."}, 
-                {dx: 0, dy: 1, desc: "Swipe Bawah. Jika mentok, layar Game Over akan muncul dan membuka potensi tombol Hint."}, 
-                {dx: 1, dy: 1, desc: "Swipe Kanan-Bawah. Langkah penentuan... siap-siap!"}, 
-                {dx: -1, dy: 0, desc: "Swipe Kiri. Boom! Gampang? Awas, level aslinya jauh lebih sadis. Buktikan kamu yang paling Akurat!"} 
-            ] 
+            moves: [
+                {dx: 1, dy: 0, desc: "Selamat datang! Setiap swipe menggerakkan semua blok sekaligus. Mulai dengan swipe Kanan."},
+                {dx: 0, dy: 1, desc: "Blok tidak selalu mengikuti arah swipe. Blok Biru bergerak Mundur sesuai aturan Reverse."},
+                {dx: 1, dy: -1, desc: "Blok Hijau berbelok 90°. Perhatikan panah pada blok untuk melihat arah gerak sebenarnya."},
+                {dx: -1, dy: 0, desc: "Target setiap blok punya warna yang sama. Susun posisi semua blok ke lingkaran targetnya."},
+                {dx: 0, dy: -1, desc: "Tembok abu-abu menghentikan gerakan. Jika jalur terhalang, coba arah lain atau diagonal."},
+                {dx: -1, dy: 1, desc: "Puzzle ini memakai 8 arah: atas, bawah, kiri, kanan, dan empat diagonal."},
+                {dx: 1, dy: 1, desc: "Langkah yang lebih sedikit memberi bintang lebih banyak. Rencanakan sebelum swipe."},
+                {dx: -1, dy: 0, desc: "Jika buntu, tekan HINT. Satu Hint memakai satu saldo dan menunjukkan arah swipe berikutnya selama beberapa detik."}
+            ]
         };
         
         window.startTutorial = function() {
@@ -974,7 +993,7 @@
         function showTutorialDialog() {
             if(!isTutorialMode) return; const desc = document.getElementById('tut-desc'); const nextText = document.getElementById('tut-next-text');
             if(tutStep < TUTORIAL_DATA.moves.length) { document.getElementById('tut-step-display').innerText = `${tutStep+1}/${TUTORIAL_DATA.moves.length}`; desc.innerText = TUTORIAL_DATA.moves[tutStep].desc; nextText.innerText = "TAP BUAT LANJUT >>"; nextText.classList.remove('hidden'); } 
-            else { desc.innerText = "TUTORIAL SELESAI! Bersiaplah masuk ke daftar Top 10 Global."; nextText.classList.add('hidden'); SFX.win(); confetti({ particleCount: 150, spread: 100, origin: { y: 0.5 }, colors: COLORS }); setTimeout(window.stopTutorial, 3000); }
+            else { desc.innerText = "TUTORIAL SELESAI! Kamu siap memecahkan Paradox dengan lebih cermat."; nextText.classList.add('hidden'); SFX.win(); confetti({ particleCount: 150, spread: 100, origin: { y: 0.5 }, colors: COLORS }); setTimeout(window.stopTutorial, 3000); }
         }
         window.executeTutorialMove = function() {
             if(!isTutorialMode || tutStep >= TUTORIAL_DATA.moves.length) return; SFX.swipe();
